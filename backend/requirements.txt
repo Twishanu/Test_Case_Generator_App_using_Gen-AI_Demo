@@ -1,2 +1,8 @@
-langchain_community
-langchain
+langchain 
+langchain_community 
+langchain_google_genai 
+google-generativeai 
+chromadb 
+transformers 
+accelerate 
+bitsandbytes
