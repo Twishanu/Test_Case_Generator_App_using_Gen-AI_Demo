@@ -24,7 +24,7 @@ embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 vector = embeddings.embed_query("hello, world! I am Twishanu yes")
 # print(vector[:5])
 
-file_path = "D:/AI enabled Test case gen/Documents/fictional_rag_story.pdf"  
+file_path = "D:/AI enabled Test case gen/Documents/website_ui_changes.pdf"  
 if file_path.endswith(".pdf"):
     loader = PyPDFLoader(file_path)
 elif file_path.endswith(".docx"):
@@ -36,7 +36,7 @@ documents = loader.load()
 
 # print(documents)
 
-splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=50)
+splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
 chunks = splitter.split_documents(documents)
 
 # print(chunks)
@@ -44,7 +44,7 @@ chunks = splitter.split_documents(documents)
 vectorstore=Chroma.from_documents(chunks, embedding=embeddings, persist_directory="db")
 print("Embedding complete and saved!")
 
-model = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash-lite",convert_system_message_to_human=True)
+model = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash",convert_system_message_to_human=True)
 print(model.invoke("hi").content)
 
 # Retrieval function
@@ -54,17 +54,17 @@ def retrieve(query, top_k=3):
 
 def ask_rag(query):
     context = retrieve(query)
-    prompt = f"""You are an assistant. Use ONLY the context below to answer the question.
+    prompt = f"""You are an assistant who is a functional software tester. Your role is to generate test cases based on the context provided which is a functional specification document. Generate precise test cases. Don't imagine or halucinate.
 Context: {context}
 Question: {query}
 Answer:"""
 
-    model = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash-lite",convert_system_message_to_human=True)
+    model = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash",convert_system_message_to_human=True, temperature=0)
     response = model.invoke(prompt).content
     print(response)
 
 # Example
-ask_rag("What is the name of the librarian?")
+ask_rag("Generate test cases for Navigation Menu Redesign")
 
 
 # retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
