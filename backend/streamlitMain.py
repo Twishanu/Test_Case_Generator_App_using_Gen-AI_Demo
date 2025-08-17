@@ -1,51 +1,115 @@
 from Testcode_copy import Chatbot
 import streamlit as st
-import time
 
 bot = Chatbot()
 
 st.title("RAG embedded - Test Case Generator")
-# Sidebar code fulll
+
+if "chats" not in st.session_state:
+    st.session_state.chats = ["Chat 1"]
+if "chat_count" not in st.session_state:
+    st.session_state.chat_count = 1
+if "active_chat" not in st.session_state:
+    st.session_state.active_chat = "Chat 1"
+
+# Function to add a new chat
+def create_new_chat():
+    st.session_state.chat_count += 1
+    new_chat = f"Chat {st.session_state.chat_count}"
+    st.session_state.chats.append(new_chat)
+    st.session_state.active_chat = new_chat  # auto-select new chat
+# Function to delete a chat
+# Function to delete a chat
+def delete_chat(chat_name):
+    st.session_state.chats = [c for c in st.session_state.chats if c != chat_name]
+    # if active chat is deleted, select the first available chat if exists
+    if st.session_state.active_chat == chat_name:
+        st.session_state.active_chat = st.session_state.chats[0] if st.session_state.chats else None
+# Sidebar
 with st.sidebar:
-    st.subheader("Upload Documents")
-    uploaded_files = st.file_uploader(
-        "Choose files (PDF, DOCX, TXT)",
-        type=["pdf", "docx", "txt"],
-        accept_multiple_files=True
-    )
-    if uploaded_files:
-        bot.process_uploaded_files(uploaded_files) 
-    if st.button("Delete Memory", help="Clears all stored documents"):
+    if st.button("Delete Memory", help="Clears all stored documents", width="stretch"):
         if bot.clear_memory():
             st.success("Memory cleared successfully!")
         else:
             st.error("Failed to clear memory")
-# Function for generating LLM response
-def generate_response(input):
-    result = bot.rag_chain.invoke({"input": input})
-    return result
+    st.title("Chats")
+    st.button("New Chat", width="stretch", on_click=create_new_chat)
+    
+    for chat_name in st.session_state.chats:
+        col1, col2 = st.columns([0.8, 0.2])
+        with col1:
+            st.button(
+                chat_name,
+                type="primary" if chat_name == st.session_state.active_chat else "secondary",
+                use_container_width=True,
+                key=f"btn-{chat_name}",
+                on_click=lambda c=chat_name: st.session_state.update({"active_chat": c})
+            )
+        with col2:
+            if st.button("X", key=f"del-{chat_name}"):
+                delete_chat(chat_name)
+                st.rerun()
 
-# Store LLM generated responses
-if "messages" not in st.session_state.keys():
-    st.session_state.messages = [{"role": "assistant", "content": "Hello! I'm RAG assistant. How can I assist you with?"}]
 
-# Display chat messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+# Init chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! I'm RAG assistant. You can attach docs and type your question in one go."}
+    ]
 
-# User-provided prompt
-if input := st.chat_input():
-    st.session_state.messages.append({"role": "user", "content": input})
-    with st.chat_message("user"):
-        st.write(input)
+# Render history
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.write(m["content"])
 
-# Generate a new response if last message is not from assistant
-if st.session_state.messages[-1]["role"] != "assistant":
-    with st.chat_message("assistant"):
-        with st.spinner("Getting your answer by going through the document..."):
-            response = generate_response(input) 
-            result_text = response["answer"]
-            st.write(result_text) 
-    message = {"role": "assistant", "content": response["answer"]}
-    st.session_state.messages.append(message)
+# --- Single input with files ---
+prompt = st.chat_input(
+    "Type your message and let's get goin...",
+    accept_file="multiple",
+    file_type=["pdf", "docx", "txt"]
+)
+
+if prompt:
+    # 1) Always index files first (if any)
+    if getattr(prompt, "files", None):
+        with st.spinner(f"Processing {len(prompt.files)} document(s)…"):
+            # If your API supports batch processing, keep as one call.
+            # Otherwise, process one-by-one for smoother UX (optional).
+            bot.clear_memory()
+            bot.process_uploaded_files(prompt.files)
+        st.session_state.messages.append(
+            {"role": "system", "content": f"Processed {len(prompt.files)} document(s)."}
+        )
+        st.success(f"Processed {len(prompt.files)} file(s) ✅")
+
+    # 2) Then answer the query (if provided)
+    if getattr(prompt, "text", None):
+        user_text = prompt.text
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        with st.chat_message("user"):
+            st.write(user_text)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Searching the uploaded docs and composing an answer…"):
+                resp = bot.rag_chain.invoke({"input": user_text})
+                answer = (
+                    resp.get("answer", None)
+                    if isinstance(resp, dict) else resp
+                )
+                if answer is None and isinstance(resp, dict):
+                    # Fallback for different chain output keys
+                    answer = resp.get("output_text", str(resp))
+                st.write(answer)
+
+            # --- Feedback System per response ---
+            sentiment_mapping = [":material/thumb_down:", ":material/thumb_up:"]
+            selected = st.feedback("thumbs", key=f"feedback_{len(st.session_state.messages)}")
+            if selected is not None:
+                st.markdown(f"You selected: {sentiment_mapping[selected]}")
+
+        # Store assistant message in session
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+
+    # If user only uploaded files and didn’t type text, just guide them
+    if getattr(prompt, "files", None) and not getattr(prompt, "text", None):
+        st.info("Documents indexed. How can I help you with the document?.")
