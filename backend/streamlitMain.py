@@ -1,9 +1,23 @@
 from Testcode_copy import Chatbot
 import streamlit as st
 
+st.markdown(
+    """
+<style>
+    # div[data-testid="stVerticalBlock"] div:has(div.fixed-header) {
+    #     position: sticky;
+    #     top: 2.875rem;
+    #     background-color: #0f0f0fff;
+    #     z-index: 999;
+    # }
+</style>
+    """,
+    unsafe_allow_html=True
+)
 bot = Chatbot()
 
 st.title("RAG embedded - Test Case Generator")
+
 
 if "chats" not in st.session_state:
     st.session_state.chats = ["Chat 1"]
@@ -32,6 +46,12 @@ with st.sidebar:
             st.success("Memory cleared successfully!")
         else:
             st.error("Failed to clear memory")
+    # Later on we can fine-tune the model
+    raw_files = st.file_uploader("Choose base docs", accept_multiple_files=True)
+    if raw_files:
+        bot.process_raw_docs(raw_files)
+        st.success("Base docs processed")
+        
     st.title("Chats")
     st.button("New Chat", width="stretch", on_click=create_new_chat)
     

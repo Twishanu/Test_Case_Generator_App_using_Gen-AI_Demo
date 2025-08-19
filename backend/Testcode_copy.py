@@ -9,6 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.schema import Document
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -48,6 +49,7 @@ class Chatbot:
             # Reset in-memory storage
             self.documents = []
             self.chunks = []
+            self.raw_documents = []
             
             # Reinitialize 
             self.vectorstore = Chroma(
@@ -61,6 +63,50 @@ class Chatbot:
         except Exception as e:
             print(f"Error clearing memory: {e}")
             return False
+
+    def process_raw_docs(self, raw_files):
+        print("hello")
+        self.raw_documents = []
+
+        for raw_file in raw_files:
+            temp_raw_file_path = f"temp_{raw_file.name}"
+            with open(temp_raw_file_path, "wb") as f:
+                f.write(raw_file.getbuffer())
+            try:
+                if raw_file.name.endswith(".pdf"):
+                    loader = PyPDFLoader(temp_raw_file_path)
+                    self.raw_documents.extend(loader.load())
+                elif raw_file.name.endswith(".docx"):
+                    loader = Docx2txtLoader(temp_raw_file_path)
+                    self.raw_documents.extend(loader.load())
+                else:
+                    with open(temp_raw_file_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                        self.raw_documents.append(Document(page_content=text))
+            finally:
+                if os.path.exists(temp_raw_file_path):
+                    os.remove(temp_raw_file_path)
+        self.raw_chunks = self.splitter.split_documents(self.raw_documents)
+        self.vectorstore = Chroma.from_documents(
+            documents=self.raw_chunks,
+            embedding=self.embeddings,
+            persist_directory="db"
+        )
+        self.retriever = self.vectorstore.as_retriever()
+        model = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", convert_system_message_to_human=True)
+        system_prompt = (
+            "You are an assistant. "
+            "Use only the retrieved context to precisely answer the question. "
+            "If you don't know the answer, say that you don't know."
+            "\n\n{context}"
+        )
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{input}"),
+        ])
+        question_answering_chain = create_stuff_documents_chain(model, chat_prompt)
+        self.rag_chain = create_retrieval_chain(self.retriever, question_answering_chain)
+
 
     def _initialize_components(self):
         GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
